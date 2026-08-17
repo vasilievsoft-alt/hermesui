@@ -4,7 +4,7 @@ services:
     image: hermes-manager:latest
     restart: unless-stopped
     ports:
-      - "${MANAGER_PORT:-3000}:3000"
+      - "${MANAGER_PORT:-3900}:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
