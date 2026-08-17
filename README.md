@@ -36,22 +36,38 @@ docker compose up -d --build
 
 ## Деплой в Dokploy
 
+Compose уже содержит Traefik-роутер с `HostRegexp` для поддоменов инстансов — wildcard-домен в UI Dokploy добавлять не нужно.
+
 1. Запушь этот репозиторий в git.
 2. В Dokploy: **Projects → New → Docker Compose**, выбери репозиторий (или вставь содержимое `docker-compose.yml`).
-3. DNS у своего домена:
-   - `A` запись `hermes.example.com` → IP сервера
-   - `A` запись `*.hermes.example.com` → IP сервера
-4. В настройках сервиса Dokploy добавь два домена, оба на порт `3000`:
-   - `hermes.example.com` (сам менеджер)
-   - `*.hermes.example.com` (поддомены инстансов)
-5. В Environment пропиши:
+3. Добавь домен менеджера через вкладку **Domains** (порт `3000`) — обычный точный домен, например сгенерированный `*.traefik.me` preview-домен Dokploy.
+4. В Environment пропиши:
    ```
-   BASE_DOMAIN=hermes.example.com
+   BASE_DOMAIN=<тот же домен менеджера>
    MANAGER_PASSWORD=сильный-пароль
    ```
-6. Deploy.
+5. Deploy. Инстансы будут доступны по `http://<имя-инстанса>.<BASE_DOMAIN>`.
 
-Про HTTPS: wildcard-сертификат для `*.hermes.example.com` Dokploy выпустит только через DNS-challenge — настрой DNS-провайдера (Cloudflare и т.п.) в **Settings → Certificates**. Без этого инстансы будут доступны по HTTP.
+### Быстрый вариант: preview-домен traefik.me
+
+Если в качестве домена менеджера используешь сгенерированный Dokploy домен вида `hermesui-main-xxxx-173-212-211-71.traefik.me`:
+
+- поддомены инстансов резолвятся автоматически (wildcard DNS traefik.me)
+- роутер уже настроен лейблами в compose
+- схема URL инстансов автоматически станет `http` (у traefik.me нет wildcard-сертификата на вложенные поддомены) — просто открывай инстансы по http, менеджер может быть по https
+- DNS-записи создавать не нужно
+
+### Правильный вариант: свой домен + HTTPS на инстансах
+
+1. DNS: `A` запись `hermes.example.com` → IP сервера и `A` запись `*.hermes.example.com` → IP сервера.
+2. В **Settings → Certificates** Dokploy настрой DNS-провайдера (Cloudflare и т.п.) и выпусти wildcard-сертификат `*.hermes.example.com` (DNS-challenge).
+3. Домен менеджера `hermes.example.com` — как обычно через UI (порт 3000, HTTPS).
+4. env:
+   ```
+   BASE_DOMAIN=hermes.example.com
+   TRAEFIK_ENTRYPOINTS=web,websecure
+   ```
+5. Подключи wildcard-сертификат к роутеру `hermes-instances` (лейблы в compose при необходимости дополни `traefik.http.routers.hermes-instances.tls=true` и `...tls.domains[0].main=*.hermes.example.com`).
 
 ### Если wildcard-домен не вариант
 

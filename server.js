@@ -14,6 +14,7 @@ const ACCESS_MODE = process.env.ACCESS_MODE || 'subdomain';
 const PORT_RANGE_START = parseInt(process.env.PORT_RANGE_START || '8800', 10);
 const PORT_RANGE_END = parseInt(process.env.PORT_RANGE_END || '8899', 10);
 const PUBLIC_HOST = process.env.PUBLIC_HOST || '';
+const INSTANCE_URL_SCHEME = process.env.INSTANCE_URL_SCHEME || (BASE_DOMAIN.endsWith('.traefik.me') ? 'http' : 'https');
 const MANAGER_PASSWORD = process.env.MANAGER_PASSWORD || '';
 const HERMES_INSTANCE_PORT = parseInt(process.env.HERMES_INSTANCE_PORT || '8787', 10);
 
@@ -290,7 +291,7 @@ function instanceUrl(instance, req) {
     const host = PUBLIC_HOST || (req.headers.host || '').split(':')[0];
     return 'http://' + host + ':' + instance.port;
   }
-  return 'https://' + instance.name + '.' + BASE_DOMAIN;
+  return INSTANCE_URL_SCHEME + '://' + instance.name + '.' + BASE_DOMAIN;
 }
 
 // 7. Listen
