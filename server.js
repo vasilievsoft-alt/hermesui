@@ -216,7 +216,7 @@ const app = express();
 // 1. Proxy middleware
 app.use((req, res, next) => {
   const alias = resolveAlias(req);
-  if (alias && !req.path.startsWith('/api/')) {
+  if (alias) {
     proxy.web(req, res, {
       target: 'http://' + alias + ':' + HERMES_INSTANCE_PORT,
       changeOrigin: true,
