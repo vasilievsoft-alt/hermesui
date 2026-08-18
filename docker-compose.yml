@@ -19,6 +19,7 @@ services:
       - "traefik.docker.network=dokploy-network"
       - "traefik.http.routers.hermes-instances.rule=HostRegexp(`^[a-z0-9-]+\\.${BASE_DOMAIN}`)"
       - "traefik.http.routers.hermes-instances.entrypoints=${TRAEFIK_ENTRYPOINTS:-web}"
+      - "traefik.http.routers.hermes-instances.service=hermes-instances"
       - "traefik.http.services.hermes-instances.loadbalancer.server.port=3000"
     networks:
       - hermes-net
