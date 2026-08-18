@@ -8,6 +8,9 @@ const path = require('path');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DOCKER_SOCKET = process.env.DOCKER_SOCKET || '/var/run/docker.sock';
 const HERMES_IMAGE = process.env.HERMES_IMAGE || 'ghcr.io/nesquena/hermes-webui:latest';
+const HERMES_AGENT_REPO = process.env.HERMES_AGENT_REPO || 'https://github.com/NousResearch/hermes-agent.git';
+const AGENT_SRC_VOLUME = 'hermes-agent-src';
+const GIT_IMAGE = 'alpine/git:latest';
 const HERMES_NETWORK = process.env.HERMES_NETWORK || 'hermes-net';
 const BASE_DOMAIN = process.env.BASE_DOMAIN || '';
 const ACCESS_MODE = process.env.ACCESS_MODE || 'subdomain';
@@ -56,19 +59,58 @@ async function ensureNetwork() {
 }
 
 // Image
-async function ensureImage() {
+async function ensureImage(image) {
+  const img = image || HERMES_IMAGE;
   try {
-    await docker.getImage(HERMES_IMAGE).inspect();
+    await docker.getImage(img).inspect();
     return;
   } catch (e) {
     // pull below
   }
   await new Promise((resolve, reject) => {
-    docker.pull(HERMES_IMAGE, {}, (err, stream) => {
+    docker.pull(img, {}, (err, stream) => {
       if (err) return reject(err);
       docker.modem.followProgress(stream, (err2) => (err2 ? reject(err2) : resolve()));
     });
   });
+}
+
+// Agent source (shared named volume, cloned once)
+let agentSourcePromise = null;
+function ensureAgentSource() {
+  if (!agentSourcePromise) {
+    agentSourcePromise = (async () => {
+      try {
+        await docker.getVolume(AGENT_SRC_VOLUME).inspect();
+        return;
+      } catch (e) {
+        await docker.createVolume({ Name: AGENT_SRC_VOLUME });
+      }
+      try {
+        await ensureImage(GIT_IMAGE);
+        const c = await docker.createContainer({
+          Image: GIT_IMAGE,
+          Cmd: ['clone', '--depth', '1', HERMES_AGENT_REPO, '/src'],
+          HostConfig: { Binds: [AGENT_SRC_VOLUME + ':/src'] },
+        });
+        const stream = await c.attach({ stream: true, stdout: true, stderr: true });
+        stream.pipe(process.stdout);
+        await c.start();
+        const st = await c.wait();
+        try {
+          await c.remove({ force: true });
+        } catch (e) {}
+        if (st.StatusCode !== 0) throw new Error('git clone of hermes-agent failed (exit ' + st.StatusCode + ')');
+      } catch (err) {
+        agentSourcePromise = null;
+        try {
+          await docker.getVolume(AGENT_SRC_VOLUME).remove({ force: true });
+        } catch (e) {}
+        throw err;
+      }
+    })();
+  }
+  return agentSourcePromise;
 }
 
 // Utils
@@ -111,6 +153,7 @@ async function createInstance({ name, password }) {
   const slug = slugify(name) || 'instance';
   const containerName = 'hermes-' + slug + '-' + id;
   await ensureImage();
+  await ensureAgentSource();
 
   const env = [
     'HERMES_WEBUI_HOST=0.0.0.0',
@@ -133,6 +176,7 @@ async function createInstance({ name, password }) {
     Binds: [
       'hermes-data-' + id + ':/home/hermeswebui/.hermes',
       'hermes-ws-' + id + ':/home/hermeswebui/workspace',
+      AGENT_SRC_VOLUME + ':/home/hermeswebui/.hermes/hermes-agent:ro',
     ],
   };
 
@@ -316,5 +360,6 @@ server.on('upgrade', (req, socket, head) => {
 (async () => {
   await ensureNetwork();
   ensureImage().catch((err) => console.error('image prefetch failed:', err.message));
+  ensureAgentSource().catch((err) => console.error('agent source prefetch failed:', err.message));
   console.log(`hermes-manager listening on :${PORT} (mode=${ACCESS_MODE}, image=${HERMES_IMAGE})`);
 })();

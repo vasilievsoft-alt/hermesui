@@ -24,6 +24,7 @@
 | `PUBLIC_HOST` | авто | Хост в ссылках на инстансы в режиме `ports` (напр. IP сервера) |
 | `MANAGER_PASSWORD` | — | Basic-auth (`admin`) на UI и API менеджера. Настоятельно рекомендуется: менеджер управляет Docker |
 | `HERMES_IMAGE` | `ghcr.io/nesquena/hermes-webui:latest` | Образ инстансов |
+| `HERMES_AGENT_REPO` | `https://github.com/NousResearch/hermes-agent.git` | Репозиторий агента; менеджер один раз клонирует его в общий volume `hermes-agent-src` и монтирует read-only в каждый инстанс |
 
 ## Локальный запуск
 
@@ -90,3 +91,5 @@ PUBLIC_HOST=123.45.67.89
 - Нет restart/stop инстансов (только create/delete) — контейнеры и так `restart: unless-stopped`
 - Нет логов/статистики инстансов в UI менеджера
 - Состояние менеджера stateless: список инстансов читается по docker-лейблам, менеджер можно пересоздавать
+- Первый старт каждого инстанса медленный (~2–5 мин): webui ставит зависимости агента из смонтированного исходника в свой venv; рестарты контейнера быстрые (маркер `.deps_installed`)
+- Исходники агента живут в общем volume `hermes-agent-src` — обновление агента: `docker volume rm hermes-agent-src` + redeploy менеджера (клон пересоздастся) + пересоздание инстансов
