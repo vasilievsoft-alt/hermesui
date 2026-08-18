@@ -22,7 +22,10 @@ services:
       - "traefik.http.services.hermes-instances.loadbalancer.server.port=3000"
     networks:
       - hermes-net
+      - dokploy-network
 
 networks:
   hermes-net:
     name: hermes-net
+  dokploy-network:
+    external: true
