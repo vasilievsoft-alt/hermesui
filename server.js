@@ -118,6 +118,13 @@ async function createInstance({ name, password }) {
     'HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui',
   ];
   if (password) env.push('HERMES_WEBUI_PASSWORD=' + password);
+  if (BASE_DOMAIN && ACCESS_MODE === 'subdomain') {
+    const host = containerName + '.' + BASE_DOMAIN;
+    env.push('HERMES_WEBUI_ALLOWED_ORIGINS=http://' + host + ',https://' + host);
+    env.push('HERMES_WEBUI_TRUST_FORWARDED_HOST=1');
+    env.push('HERMES_WEBUI_TRUST_FORWARDED_PROTO=1');
+    if (INSTANCE_URL_SCHEME === 'https') env.push('HERMES_WEBUI_SECURE=1');
+  }
 
   const hostConfig = {
     RestartPolicy: { Name: 'unless-stopped' },
@@ -217,10 +224,7 @@ const app = express();
 app.use((req, res, next) => {
   const alias = resolveAlias(req);
   if (alias) {
-    proxy.web(req, res, {
-      target: 'http://' + alias + ':' + HERMES_INSTANCE_PORT,
-      changeOrigin: true,
-    });
+    proxy.web(req, res, { target: 'http://' + alias + ':' + HERMES_INSTANCE_PORT });
     return;
   }
   next();
