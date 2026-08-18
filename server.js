@@ -118,6 +118,7 @@ async function createInstance({ name, password }) {
     'HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui',
   ];
   if (password) env.push('HERMES_WEBUI_PASSWORD=' + password);
+  env.push('HERMES_WEBUI_ONBOARDING_OPEN=1');
   if (BASE_DOMAIN && ACCESS_MODE === 'subdomain') {
     const host = containerName + '.' + BASE_DOMAIN;
     env.push('HERMES_WEBUI_ALLOWED_ORIGINS=http://' + host + ',https://' + host);
