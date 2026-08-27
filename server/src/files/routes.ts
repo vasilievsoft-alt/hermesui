@@ -206,14 +206,16 @@ filesRouter.post(
       const dirRaw = (req.body.dir as string | undefined) ?? '';
       const targetDir = resolveInWorkspace(dirRaw);
       // sanitize client filename: keep base name only
-      const baseName = path.basename(f.originalname).replace(/[/\\]/g, '_');
+      const baseName = fixDoubleEncodedUtf8(
+        path.basename(f.originalname).replace(/[/\\]/g, '_')
+      );
       const target = resolveInWorkspace(posixJoin(dirRaw, baseName));
       if (path.dirname(target) !== targetDir) {
         res.status(400).json({ error: 'invalid upload target' });
         return;
       }
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.rename(f.path, target);
+      await moveAcrossDevices(f.path, target);
       void cleanupTmpDir(f.path);
       res.json({ ok: true, path: posixJoin(dirRaw, baseName) });
     } catch (e) {
@@ -224,6 +226,33 @@ filesRouter.post(
 
 function posixJoin(...parts: string[]): string {
   return parts.join('/').replace(/\/+/g, '/');
+}
+
+/** rename() fails with EXDEV across mount points (e.g. /tmp → /workspace). */
+async function moveAcrossDevices(src: string, dst: string): Promise<void> {
+  try {
+    await fs.promises.rename(src, dst);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
+    await fs.promises.copyFile(src, dst);
+    await fs.promises.rm(src, { force: true });
+  }
+}
+
+/**
+ * Some clients (curl on Windows, older browsers) send filenames whose UTF-8
+ * bytes got decoded as latin-1 upstream ("Ð¢Ð¢" instead of "ТТ"). Repair the
+ * common case; leave everything else untouched.
+ */
+function fixDoubleEncodedUtf8(name: string): string {
+  if (!/[ÃÐÑ]/.test(name) || name.includes('\uFFFD')) return name;
+  try {
+    const repaired = Buffer.from(name, 'latin1').toString('utf8');
+    if (!repaired.includes('\uFFFD') && repaired.length > 0) return repaired;
+  } catch {
+    /* keep original */
+  }
+  return name;
 }
 
 async function cleanupTmpDir(file: string): Promise<void> {

@@ -5,9 +5,10 @@ export HOME="${HOME:-/config/home}"
 export HERMES_HOME="${HERMES_HOME:-/config/agents/hermes}"
 mkdir -p "$HOME" "$HERMES_HOME"
 
-# First-boot hermes install into the persistent config volume.
-if [ ! -f "$HERMES_HOME/.installed" ]; then
-  echo "[entrypoint] installing hermes agent (first boot, takes a few minutes)..."
+# hermes self-install / self-repair: (re)install whenever the binary is not
+# on PATH — covers failed first boots and partial installs.
+if ! command -v hermes >/dev/null 2>&1; then
+  echo "[entrypoint] installing hermes agent (first boot or repair, takes a few minutes)..."
   if curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash; then
     if command -v hermes >/dev/null 2>&1; then
       touch "$HERMES_HOME/.installed"
