@@ -6,6 +6,15 @@ RUN npm ci || npm install
 COPY web/ ./
 RUN npm run build
 
+# ---------- server deps (node-pty needs a real toolchain to compile) ----------
+FROM node:24-bookworm-slim AS server-deps
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential python3 \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/server
+COPY server/package.json server/package-lock.json* ./
+RUN npm ci --omit=dev || npm install --omit=dev
+
 # ---------- toolbox runtime ----------
 FROM node:24-bookworm-slim
 
@@ -36,8 +45,7 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /app/server
-COPY server/package.json server/package-lock.json* ./
-RUN npm ci --omit=dev || npm install --omit=dev
+COPY --from=server-deps /app/server/node_modules ./node_modules
 COPY server/src ./src
 COPY shared ../shared
 
