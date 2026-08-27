@@ -212,6 +212,7 @@ filesRouter.post(
         res.status(400).json({ error: 'invalid upload target' });
         return;
       }
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
       await fs.promises.rename(f.path, target);
       void cleanupTmpDir(f.path);
       res.json({ ok: true, path: posixJoin(dirRaw, baseName) });

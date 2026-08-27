@@ -12,8 +12,17 @@ export const chatApi = {
     }),
   messages: (id: string) =>
     api.get<MessageInfo[]>(`/api/chat/conversations/${id}/messages`),
-  send: (id: string, text: string) =>
-    api.post<{ ok: boolean }>(`/api/chat/conversations/${id}/send`, { text }),
+  send: (
+    id: string,
+    text: string,
+    images: { mimeType: string; data: string }[] = [],
+    files: string[] = []
+  ) =>
+    api.post<{ ok: boolean }>(`/api/chat/conversations/${id}/send`, {
+      text,
+      images,
+      files,
+    }),
   stop: (id: string) =>
     api.post<{ ok: boolean }>(`/api/chat/conversations/${id}/stop`),
 };

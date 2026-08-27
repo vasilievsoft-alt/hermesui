@@ -8,8 +8,21 @@ interface Props {
   onClose: () => void;
 }
 
+const LAUNCHERS: { cmd: string; label: string }[] = [
+  { cmd: 'bash', label: 'bash' },
+  { cmd: 'claude', label: 'claude' },
+  { cmd: 'opencode', label: 'opencode' },
+  { cmd: 'openclaw', label: 'openclaw' },
+  { cmd: 'hermes', label: 'hermes' },
+];
+
 export default function AgentTerminal({ agentId, onClose }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  function launch(cmd: string): void {
+    wsRef.current?.send(JSON.stringify({ type: 'input', data: `${cmd}\r` }));
+  }
 
   useEffect(() => {
     if (!host.current) return;
@@ -35,6 +48,7 @@ export default function AgentTerminal({ agentId, onClose }: Props) {
     const ws = new WebSocket(
       `${proto}://${location.host}/ws/terminal?${params}`
     );
+    wsRef.current = ws;
     ws.onmessage = (m) => {
       try {
         const f = JSON.parse(m.data);
@@ -74,9 +88,21 @@ export default function AgentTerminal({ agentId, onClose }: Props) {
             agent terminal{agentId ? ` · ${agentId}` : ''} — workspace shell for
             OAuth / setup flows
           </span>
-          <button onClick={onClose} className="hover:text-white">
-            ✕ close
-          </button>
+          <div className="flex items-center gap-2">
+            {LAUNCHERS.map((l) => (
+              <button
+                key={l.cmd}
+                onClick={() => launch(l.cmd)}
+                className="rounded border border-neutral-700 px-2 py-0.5 text-xs hover:bg-neutral-800 hover:text-white"
+                title={`run ${l.cmd} in this terminal`}
+              >
+                ▸ {l.label}
+              </button>
+            ))}
+            <button onClick={onClose} className="ml-2 hover:text-white">
+              ✕ close
+            </button>
+          </div>
         </div>
         <div ref={host} className="min-h-0 flex-1 p-2" />
       </div>

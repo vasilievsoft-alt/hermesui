@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Tree, type NodeApi } from 'react-arborist';
 import CodeEditor from '../components/files/CodeEditor';
 import { filesApi } from '../files-api';
+import type { FileEntry } from '../../../shared/types';
 
 interface TNode {
-  id: string; // path relative to workspace root
+  id: string; // workspace-relative path
   name: string;
   type: 'dir' | 'file';
   children?: TNode[];
@@ -21,7 +20,7 @@ function parentOf(p: string): string {
 }
 
 async function fetchChildren(dir: string): Promise<TNode[]> {
-  const entries = await filesApi.tree(dir);
+  const entries: FileEntry[] = await filesApi.tree(dir);
   return entries.map((e) => ({
     id: dir ? `${dir}/${e.name}` : e.name,
     name: e.name,
@@ -31,7 +30,8 @@ async function fetchChildren(dir: string): Promise<TNode[]> {
 }
 
 export default function FilesPage() {
-  const [rootData, setRootData] = useState<TNode>(ROOT);
+  const [root, setRoot] = useState<TNode>(ROOT);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -39,62 +39,45 @@ export default function FilesPage() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const treeWrap = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 260, h: 600 });
 
-  useEffect(() => {
-    // reload whole tree
-    (async () => {
-      try {
-        setRootData({ ...ROOT, children: await fetchChildren('') });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    const el = treeWrap.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() =>
-      setSize({ w: el.clientWidth, h: el.clientHeight })
-    );
-    ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
-  }, [rootData]);
-
-  async function ensureLoaded(node: TNode): Promise<TNode[]> {
-    if (node.type !== 'dir') return [];
-    if (node.children && node.children.length) return node.children;
-    return await fetchChildren(node.id);
-  }
-
-  // loads dir children into the tree state (immutable update)
-  async function loadInto(dirNode: TNode): Promise<void> {
-    const kids = dirNode.children?.length
-      ? dirNode.children
-      : await fetchChildren(dirNode.id);
-    setRootData((prev) => {
+  async function loadDir(dir: string): Promise<void> {
+    const kids = await fetchChildren(dir);
+    setRoot((prev) => {
       const clone = structuredClone(prev);
-      const target = findByPath(clone, dirNode.id);
+      const target = dir ? find(clone, dir) : clone;
       if (target) target.children = kids;
       return clone;
     });
   }
 
-  async function refreshDir(dir: string): Promise<void> {
-    const kids = await fetchChildren(dir);
-    setRootData((prev) => {
-      const clone = structuredClone(prev);
-      if (!dir) {
-        clone.children = kids;
-      } else {
-        const target = findByPath(clone, dir);
-        if (target) target.children = kids;
-      }
-      return clone;
+  useEffect(() => {
+    void loadDir('').catch((e) => setError(String(e)));
+  }, []);
+
+  async function toggleDir(node: TNode): Promise<void> {
+    const isOpen = expanded.has(node.id);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (isOpen) next.delete(node.id);
+      else next.add(node.id);
+      return next;
     });
+    if (!isOpen) {
+      // (re)load children on every expand to reflect agent-side changes
+      const kids = await fetchChildren(node.id);
+      setRoot((prev) => {
+        const clone = structuredClone(prev);
+        const target = find(clone, node.id);
+        if (target) target.children = kids;
+        return clone;
+      });
+    }
+  }
+
+  async function refreshDir(dir: string): Promise<void> {
+    await loadDir(dir);
+    setFlash('done');
+    setTimeout(() => setFlash(null), 1200);
   }
 
   async function openFile(path: string): Promise<void> {
@@ -117,28 +100,18 @@ export default function FilesPage() {
     setFlash('saved');
     setTimeout(() => setFlash(null), 1500);
     setEditing(false);
-    void refreshDir(parentOf(selected));
+    void loadDir(parentOf(selected));
   }
 
-  async function op(
-    fn: () => Promise<unknown>,
-    afterDir: string,
-    msg?: string
-  ): Promise<void> {
+  async function op(fn: () => Promise<unknown>, afterDir: string, msg?: string): Promise<void> {
     try {
       await fn();
-      await refreshDir(afterDir);
+      await loadDir(afterDir);
       setFlash(msg ?? 'done');
       setTimeout(() => setFlash(null), 1500);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }
-
-  async function activate(node: NodeApi<TNode>): Promise<void> {
-    const d = node.data;
-    if (d.type === 'file') void openFile(d.id);
-    else void loadInto(d);
   }
 
   function promptName(title: string, def = ''): string | null {
@@ -147,23 +120,20 @@ export default function FilesPage() {
   }
 
   const isImage = selected ? IMAGE_EXT.test(selected) : false;
-  const canEdit =
-    selected != null && read != null && !read.binary && !read.truncated;
+  const canEdit = selected != null && read != null && !read.binary && !read.truncated;
 
   return (
     <div className="flex h-full flex-col">
       {/* toolbar */}
-      <div className="flex items-center gap-2 border-b border-neutral-800 px-3 py-2 text-sm">
-        <ToolbarBtn onClick={() => void refreshDir('').then(() => null)}>↻</ToolbarBtn>
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 px-3 py-2 text-sm">
+        <ToolbarBtn onClick={() => void loadDir('')}>↻</ToolbarBtn>
         <ToolbarBtn
           onClick={() => {
             const name = promptName('New file path (e.g. src/app.ts)');
             if (name)
-              void op(
-                () => filesApi.write(name, ''),
-                parentOf(name),
-                `created ${name}`
-              ).then(() => openFile(name).catch(() => {}));
+              void op(() => filesApi.write(name, ''), parentOf(name), `created ${name}`).then(
+                () => openFile(name)
+              );
           }}
         >
           + File
@@ -176,7 +146,7 @@ export default function FilesPage() {
         >
           + Folder
         </ToolbarBtn>
-        <ToolbarBtn onClick={() => fileInput.current?.click()}>⬆ Upload</ToolbarBtn>
+        <ToolbarBtn onClick={() => fileInput.current?.click()}>⬆ Upload → {uploadDirFor(selected) || 'root'}</ToolbarBtn>
         <input
           ref={fileInput}
           type="file"
@@ -185,7 +155,10 @@ export default function FilesPage() {
           onChange={(e) => {
             const list = Array.from(e.target.files ?? []);
             e.target.value = '';
-            for (const f of list) void filesApi.upload(uploadDirFor(selected), f).then(() => refreshDir(uploadDirFor(selected)));
+            const dir = uploadDirFor(selected);
+            Promise.all(list.map((f) => filesApi.upload(dir, f)))
+              .then(() => loadDir(dir))
+              .catch((err) => setError(String(err)));
           }}
         />
         <div className="flex-1" />
@@ -209,9 +182,7 @@ export default function FilesPage() {
                 </ToolbarBtn>
               </>
             )}
-            {!editing && canEdit && (
-              <ToolbarBtn onClick={() => setEditing(true)}>✎ Edit</ToolbarBtn>
-            )}
+            {!editing && canEdit && <ToolbarBtn onClick={() => setEditing(true)}>✎ Edit</ToolbarBtn>}
             <a
               href={filesApi.downloadUrl(selected)}
               className="rounded-md border border-neutral-700 px-2 py-1 hover:bg-neutral-800"
@@ -239,25 +210,22 @@ export default function FilesPage() {
 
       <div className="flex min-h-0 flex-1">
         {/* tree */}
-        <div ref={treeWrap} className="w-72 shrink-0 overflow-hidden border-r border-neutral-800">
-          <Tree
-            data={[rootData]}
-            width={size.w}
-            height={size.h}
-            rowHeight={28}
-            indent={14}
-            openByDefault={false}
-            disableDrag
-            disableDrop
-            onToggle={(id) => void toggleLoad(id)}
-            onActivate={activate}
-          >
-            {(props) => <Row {...props} />}
-          </Tree>
+        <div className="w-72 shrink-0 overflow-auto border-r border-neutral-800 py-1">
+          <TreeBranch
+            node={root}
+            depth={0}
+            expanded={expanded}
+            selected={selected}
+            onToggle={(n) => void toggleDir(n)}
+            onSelect={(n) =>
+              n.type === 'file' ? void openFile(n.id) : void toggleDir(n)
+            }
+          />
         </div>
 
         {/* viewer */}
-        <div className="min-w-0 flex-1 bg-neutral-950">          {!selected && (
+        <div className="min-w-0 flex-1 bg-neutral-950">
+          {!selected && (
             <div className="grid h-full place-items-center text-sm text-neutral-600">
               select a file to preview
             </div>
@@ -297,29 +265,56 @@ export default function FilesPage() {
       </div>
     </div>
   );
-
-  async function toggleLoad(id: string): Promise<void> {
-    const node = findByPath(rootData, id);
-    if (node && node.type === 'dir') await loadInto(node);
-  }
 }
 
-function Row({
+function TreeBranch({
   node,
-  style,
+  depth,
+  expanded,
+  selected,
+  onToggle,
+  onSelect,
 }: {
-  node: NodeApi<TNode>;
-  style: CSSProperties;
+  node: TNode;
+  depth: number;
+  expanded: Set<string>;
+  selected: string | null;
+  onToggle: (n: TNode) => void;
+  onSelect: (n: TNode) => void;
 }) {
-  const icon = node.isInternal ? (node.isOpen ? '📂' : '📁') : '📄';
+  const isOpen = expanded.has(node.id);
   return (
-    <span
-      style={{ ...style, paddingLeft: node.level * 12 + 8 }}
-      className="cursor-pointer truncate pr-2 text-sm leading-[28px] text-neutral-300"
-      title={node.data.id}
-    >
-      {icon} {node.data.name}
-    </span>
+    <div>
+      <div
+        onClick={() => onSelect(node)}
+        style={{ paddingLeft: depth * 14 + 8 }}
+        className={`flex cursor-pointer items-center gap-1.5 py-[3px] pr-2 text-sm hover:bg-neutral-800/60 ${
+          selected === node.id ? 'bg-neutral-800 text-white' : 'text-neutral-300'
+        }`}
+        title={node.id}
+      >
+        {node.type === 'dir' ? (
+          <span className="w-3 select-none text-neutral-500">{isOpen ? '▾' : '▸'}</span>
+        ) : (
+          <span className="w-3" />
+        )}
+        <span>{node.type === 'dir' ? (isOpen ? '📂' : '📁') : '📄'}</span>
+        <span className="truncate">{node.name}</span>
+      </div>
+      {node.type === 'dir' &&
+        isOpen &&
+        (node.children ?? []).map((c) => (
+          <TreeBranch
+            key={c.id}
+            node={c}
+            depth={depth + 1}
+            expanded={expanded}
+            selected={selected}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        ))}
+    </div>
   );
 }
 
@@ -340,10 +335,10 @@ function ToolbarBtn({
   );
 }
 
-function findByPath(node: TNode, id: string): TNode | null {
+function find(node: TNode, id: string): TNode | null {
   if (node.id === id) return node;
   for (const c of node.children ?? []) {
-    const hit = findByPath(c, id);
+    const hit = find(c, id);
     if (hit) return hit;
   }
   return null;
@@ -355,10 +350,8 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// Uploads go into the directory containing the current selection,
-// or workspace root when nothing is selected.
+// Uploads land next to the current selection, or in the workspace root.
 function uploadDirFor(selected: string | null): string {
   if (!selected) return '';
-  const i = selected.lastIndexOf('/');
-  return i === -1 ? '' : selected.slice(0, i);
+  return parentOf(selected);
 }

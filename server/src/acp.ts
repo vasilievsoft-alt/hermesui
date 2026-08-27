@@ -222,17 +222,18 @@ export interface PromptEvents {
   onStop?: (reason: string, err?: Error) => void;
 }
 
+/** Passthrough ACP content blocks (text / image / …). */
 export async function sendPrompt(
   agentId: string,
   acpSessionId: string,
-  text: string,
+  blocks: acp.ContentBlock[],
   events: PromptEvents = {}
 ): Promise<void> {
   const c = await ensureConn(agentId);
   try {
     const resp = await c.conn.prompt({
       sessionId: acpSessionId,
-      prompt: [{ type: 'text', text }],
+      prompt: blocks,
     });
     events.onStop?.(resp.stopReason);
   } catch (err) {

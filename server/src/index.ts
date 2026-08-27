@@ -23,7 +23,7 @@ setInterval(pruneSessions, 24 * 3600 * 1000).unref();
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);

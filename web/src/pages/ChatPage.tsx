@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { chatApi, subscribeChat } from '../chat-ws';
 import { api } from '../api';
+import { filesApi } from '../files-api';
 import type {
   AgentStatus,
   ChatEvent,
@@ -10,6 +11,12 @@ import type {
   MessageInfo,
   ToolMeta,
 } from '../types-chat';
+
+interface PendingAttach {
+  id: string;
+  file: globalThis.File;
+  isImage: boolean;
+}
 
 interface LiveMsg {
   role: 'assistant';
@@ -27,6 +34,8 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
   const [creating, setCreating] = useState(false);
+  const [pending, setPending] = useState<PendingAttach[]>([]);
+  const attachInput = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,16 +138,60 @@ export default function ChatPage() {
   }
 
   async function send() {
-    if (!activeId || busy || !input.trim()) return;
+    if (!activeId || busy) return;
+    if (!input.trim() && !pending.length) return;
     const text = input;
     setInput('');
+
+    // Split attachments: images go as ACP image blocks, other files are
+    // uploaded into workspace/attachments and referenced by path.
+    const attaches = pending.splice(0, pending.length);
+    setPending([]);
+    const images: { mimeType: string; data: string }[] = [];
+    const filePaths: string[] = [];
+    for (const a of attaches) {
+      if (a.isImage) {
+        try {
+          images.push({
+            mimeType: a.file.type || 'image/png',
+            data: await fileToBase64(a.file),
+          });
+        } catch (e) {
+          alert(`failed to read ${a.file.name}: ${String(e)}`);
+        }
+      } else {
+        try {
+          const path = `attachments/${Date.now()}-${a.file.name.replace(/[/\\]/g, '_')}`;
+          await filesApi.upload('attachments', a.file).catch(async () => {
+            // attachments dir may not exist yet — create and retry once
+            await filesApi.mkdir('attachments');
+            await filesApi.upload('attachments', a.file);
+          });
+          filePaths.push(path);
+        } catch (e) {
+          alert(`failed to upload ${a.file.name}: ${String(e)}`);
+        }
+      }
+    }
+
     setBusy(true);
     setLive(newLive());
     try {
-      await chatApi.send(activeId, text);
+      await chatApi.send(activeId, text, images, filePaths);
     } catch (e) {
       setBusy(false);
       alert(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function addAttachments(list: globalThis.File[]) {
+    for (const f of list) {
+      const isImage = /^image\//.test(f.type);
+      if (!isImage && f.size > 50 * 1024 * 1024) {
+        alert(`${f.name}: too large (50 MB max)`);
+        continue;
+      }
+      setPending((p) => [...p, { id: `${Date.now()}-${f.name}`, file: f, isImage }]);
     }
   }
 
@@ -209,7 +262,44 @@ export default function ChatPage() {
 
         {activeId && (
           <div className="border-t border-neutral-800 p-3">
+            {pending.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {pending.map((a) => (
+                  <span
+                    key={a.id}
+                    className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-300"
+                  >
+                    {a.isImage ? '🖼' : '📄'} {a.file.name.slice(0, 32)}
+                    <button
+                      onClick={() =>
+                        setPending((p) => p.filter((x) => x.id !== a.id))
+                      }
+                      className="ml-1 text-neutral-500 hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex items-end gap-2">
+              <button
+                onClick={() => attachInput.current?.click()}
+                title="attach images / files"
+                className="rounded-lg border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
+              >
+                📎
+              </button>
+              <input
+                ref={attachInput}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  addAttachments(Array.from(e.target.files ?? []));
+                  e.target.value = '';
+                }}
+              />
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -219,9 +309,18 @@ export default function ChatPage() {
                     void send();
                   }
                 }}
+                onPaste={(e) => {
+                  const imgs = Array.from(e.clipboardData.files).filter((f) =>
+                    /^image\//.test(f.type)
+                  );
+                  if (imgs.length) {
+                    e.preventDefault();
+                    addAttachments(imgs);
+                  }
+                }}
                 rows={Math.min(6, input.split('\n').length)}
                 placeholder={
-                  busy ? 'agent is working…' : 'message — Enter to send, Shift+Enter for newline'
+                  busy ? 'agent is working…' : 'message, 📎 images/files — Enter to send'
                 }
                 className="max-h-40 flex-1 resize-none rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-neutral-500"
               />
@@ -235,7 +334,7 @@ export default function ChatPage() {
               ) : (
                 <button
                   onClick={() => void send()}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() && !pending.length}
                   className="rounded-lg bg-neutral-200 px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
                 >
                   Send
@@ -342,4 +441,16 @@ function safeParse(s: string): any {
   } catch {
     return {};
   }
+}
+
+function fileToBase64(f: globalThis.File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result);
+      resolve(s.slice(s.indexOf(',') + 1)); // strip data: prefix
+    };
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(f);
+  });
 }

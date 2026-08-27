@@ -145,10 +145,33 @@ chatRouter.get('/conversations/:id/messages', (req, res) => {
 
 chatRouter.post('/conversations/:id/send', async (req, res, next) => {
   try {
-    const { text } = req.body as { text?: string };
-    if (!text || typeof text !== 'string') {
-      res.status(400).json({ error: 'text required' });
+    const body = req.body as {
+      text?: string;
+      images?: { mimeType?: string; data?: string }[];
+      files?: string[];
+    };
+    const text = (body.text ?? '').trim();
+    const images = Array.isArray(body.images) ? body.images.slice(0, 8) : [];
+    const files = Array.isArray(body.files) ? body.files.slice(0, 20) : [];
+    if (!text && !images.length && !files.length) {
+      res.status(400).json({ error: 'text, images or files required' });
       return;
+    }
+    for (const img of images) {
+      if (
+        typeof img?.data !== 'string' ||
+        typeof img?.mimeType !== 'string' ||
+        img.data.length > 7_000_000
+      ) {
+        res.status(400).json({ error: 'invalid image attachment' });
+        return;
+      }
+    }
+    for (const f of files) {
+      if (typeof f !== 'string' || f.includes('..')) {
+        res.status(400).json({ error: 'invalid file attachment' });
+        return;
+      }
     }
     const convId = req.params.id;
     const row = queries.conversations.get(convId);
@@ -167,16 +190,50 @@ chatRouter.post('/conversations/:id/send', async (req, res, next) => {
       await restoreOrFreshAcpSession(t, convId);
     }
 
-    queries.messages.add({ conversation_id: convId, role: 'user', content: text });
-    queries.conversations.setTitleIfEmpty(convId, text.replace(/\s+/g, ' ').trim());
-    publishChatEvent({ conversationId: convId, kind: 'user', text });
+    // Persist a compact user-facing message; full payload goes to the agent.
+    let userContent = text;
+    if (images.length) {
+      userContent += (userContent ? '\n\n' : '') + `[attached ${images.length} image(s)]`;
+    }
+    if (files.length) {
+      userContent +=
+        (userContent ? '\n\n' : '') +
+        files.map((f) => `[attached file: ${f}]`).join('\n');
+    }
+    queries.messages.add({
+      conversation_id: convId,
+      role: 'user',
+      content: userContent,
+      meta: { images: images.length, files },
+    });
+    queries.conversations.setTitleIfEmpty(convId, text.replace(/\s+/g, ' ').trim() || 'attachment');
+    publishChatEvent({ conversationId: convId, kind: 'user', text: userContent });
+
+    // Build ACP prompt blocks: images first, then text (+ file path notes so
+    // the agent can read them from the shared workspace).
+    const blocks: any[] = images.map((img) => ({
+      type: 'image',
+      data: img.data,
+      mimeType: img.mimeType,
+    }));
+    let textOut = text;
+    if (files.length) {
+      const note =
+        files.length === 1
+          ? `The user attached a file in the workspace: ${files[0]}. Read it when needed.`
+          : `The user attached files in the workspace:\n${files
+              .map((f) => `- ${f}`)
+              .join('\n')}\nRead them when needed.`;
+      textOut = textOut ? `${textOut}\n\n${note}` : note;
+    }
+    blocks.push({ type: 'text', text: textOut || '(see attachments)' });
 
     t.busy = true;
     t.buffer = '';
     t.thoughts = [];
     t.tools.clear();
 
-    void sendPrompt(t.agentId, t.acpSessionId, text, {
+    void sendPrompt(t.agentId, t.acpSessionId, blocks, {
       onStop(reason, err) {
         t.busy = false;
         const meta = {
