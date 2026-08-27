@@ -1,5 +1,7 @@
+# Service intentionally named `manager` — matches the Dokploy domain binding
+# from the previous deployment (domain → service manager, port 3000).
 services:
-  app:
+  manager:
     build:
       context: .
       dockerfile: docker/Dockerfile
