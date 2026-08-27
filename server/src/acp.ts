@@ -22,6 +22,9 @@ export interface AgentSpec {
   command: string[];
 }
 
+/** Errors worth showing to the user verbatim (missing binary, startup crash…). */
+export class AgentError extends Error {}
+
 export const AGENT_SPECS: AgentSpec[] = [
   { id: 'claude', label: 'Claude Code', command: ['npx', '-y', '@zed-industries/claude-agent-acp'] },
   { id: 'opencode', label: 'OpenCode', command: ['opencode', 'acp'] },
@@ -137,7 +140,21 @@ async function ensureConn(agentId: string): Promise<Conn> {
   const spec = agentSpec(agentId);
   if (!spec) throw new Error(`unknown agent ${agentId}`);
 
+  if (!lookupBinary(spec.command[0])) {
+    throw new AgentError(
+      `${spec.command[0]} is not installed in this container. ` +
+        (agentId === 'hermes'
+          ? 'First-boot install may have failed — open Agents → Terminal → ▸ hermes and run: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'
+          : 'Check the container build/start logs.')
+    );
+  }
+
+  // Persistent 'error' listener: without it, spawn ENOENT crashes the server.
   const proc = spawn(spec.command[0], spec.command.slice(1), spawnOpts(agentId));
+  proc.on('error', (e) => {
+    conns.delete(agentId);
+    console.error(`[${agentId}] spawn error: ${e.message}`);
+  });
   proc.stderr?.on('data', (d: Buffer) => {
     const line = d.toString().trim();
     if (line) console.error(`[${agentId}] ${line}`);
@@ -151,9 +168,45 @@ async function ensureConn(agentId: string): Promise<Conn> {
     )
   );
 
-  const caps = await conn.initialize({
-    protocolVersion: acp.PROTOCOL_VERSION,
-    clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+  // initialize races against early exit / spawn failure so callers get a
+  // clean rejection instead of a hang.
+  const caps = await new Promise<acp.InitializeResponse>((resolve, reject) => {
+    const onExit = (code: number | null) => {
+      cleanup();
+      conns.delete(agentId);
+      reject(
+        new AgentError(
+          `${spec.command[0]} exited during startup (code ${code}) — see server logs`
+        )
+      );
+    };
+    const onError = (e: Error) => {
+      cleanup();
+      conns.delete(agentId);
+      reject(new AgentError(`${spec.command[0]} failed to start: ${e.message}`));
+    };
+    const cleanup = () => {
+      proc.off('exit', onExit);
+      proc.off('error', onError);
+    };
+    proc.once('exit', onExit);
+    proc.once('error', onError);
+    conn
+      .initialize({
+        protocolVersion: acp.PROTOCOL_VERSION,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      })
+      .then(
+        (result) => {
+          cleanup();
+          resolve(result);
+        },
+        (err: Error) => {
+          cleanup();
+          conns.delete(agentId);
+          reject(err);
+        }
+      );
   });
 
   proc.once('exit', (code) => {

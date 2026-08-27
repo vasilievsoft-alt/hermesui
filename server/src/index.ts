@@ -40,6 +40,7 @@ app.use('/api/agent-settings', requireAuth, agentSettingsRouter);
 
 // Central error mapper: JSON everywhere.
 import { SafePathError } from './files/safe-path.js';
+import { AgentError } from './acp.js';
 app.use(
   (
     err: unknown,
@@ -49,6 +50,10 @@ app.use(
   ) => {
     if (err instanceof SafePathError) {
       res.status(400).json({ error: err.message });
+      return;
+    }
+    if (err instanceof AgentError) {
+      res.status(502).json({ error: err.message });
       return;
     }
     const code = (err as NodeJS.ErrnoException | null)?.code;
