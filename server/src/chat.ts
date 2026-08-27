@@ -10,6 +10,7 @@ import {
   isProcAlive,
   canLoadSessions,
   onUpdate,
+  agentSpec,
 } from './acp.js';
 import { publishChatEvent } from './bus.js';
 
@@ -116,6 +117,10 @@ chatRouter.post('/conversations', async (req, res, next) => {
     const { agentId } = req.body as { agentId?: string };
     if (!agentId) {
       res.status(400).json({ error: 'agentId required' });
+      return;
+    }
+    if (!agentSpec(agentId)) {
+      res.status(400).json({ error: `unknown agent ${agentId}` });
       return;
     }
     const id = crypto.randomUUID();

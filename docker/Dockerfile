@@ -14,8 +14,12 @@ RUN apt-get update \
       ca-certificates curl git bash ripgrep python3 python3-venv procps tini \
  && rm -rf /var/lib/apt/lists/*
 
-# Node CLIs: claude code, opencode, openclaw
-RUN npm install -g @anthropic-ai/claude-code opencode-ai openclaw
+# Node CLIs: claude code, opencode, openclaw.
+# npm >=11.16 blocks install scripts by default; these CLIs need theirs
+# (postinstall downloads the actual binaries / bundled plugins).
+RUN npm install -g \
+      --allow-scripts=@anthropic-ai/claude-code,openclaw,opencode-ai,@google/genai,protobufjs,tree-sitter-bash \
+      @anthropic-ai/claude-code opencode-ai openclaw
 
 # All agent homes live under /config (persisted volume): claude -> ~/.claude,
 # openclaw -> ~/.openclaw, opencode -> ~/.local/share/opencode etc.

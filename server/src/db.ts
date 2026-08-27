@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { config } from './config.js';
@@ -6,8 +6,8 @@ import { config } from './config.js';
 const dbDir = path.join(config.configDir, 'hermesui');
 fs.mkdirSync(dbDir, { recursive: true });
 
-export const db = new Database(path.join(dbDir, 'data.db'));
-db.pragma('journal_mode = WAL');
+export const db = new DatabaseSync(path.join(dbDir, 'data.db'));
+db.exec('PRAGMA journal_mode = WAL;');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS conversations (
@@ -52,7 +52,7 @@ export const queries = {
     list(): ConversationRow[] {
       return db
         .prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
-        .all() as ConversationRow[];
+        .all() as unknown as ConversationRow[];
     },
     get(id: string): ConversationRow | undefined {
       return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as
@@ -85,7 +85,7 @@ export const queries = {
     list(conversationId: string): MessageRow[] {
       return db
         .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY id')
-        .all(conversationId) as MessageRow[];
+        .all(conversationId) as unknown as MessageRow[];
     },
     add(row: {
       conversation_id: string;
