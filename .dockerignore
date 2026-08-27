@@ -1,3 +1,12 @@
 node_modules
+**/node_modules
+dist
+**/dist
+.git
+workspace
+data
+*.db
+*.log
 .env
 README.md
+docker

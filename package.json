@@ -1,12 +1,12 @@
 {
   "name": "hermesui",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": {
-    "express": "^4.21.2",
-    "dockerode": "^4.0.4",
-    "http-proxy": "^1.18.1"
+  "description": "Web cockpit for CLI coding agents (claude code, opencode, openclaw, hermes) via ACP",
+  "scripts": {
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build && npm --prefix server run typecheck",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck"
   }
 }

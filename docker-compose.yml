@@ -1,32 +1,19 @@
 services:
-  manager:
-    build: .
-    image: hermes-manager:latest
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     ports:
-      - "${MANAGER_PORT:-3900}:3000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - '${UI_PORT:-3000}:3000'
     environment:
-      ACCESS_MODE: ${ACCESS_MODE:-subdomain}
-      BASE_DOMAIN: ${BASE_DOMAIN:-}
-      PUBLIC_HOST: ${PUBLIC_HOST:-}
-      HERMES_IMAGE: ${HERMES_IMAGE:-ghcr.io/nesquena/hermes-webui:latest}
-      MANAGER_PASSWORD: ${MANAGER_PASSWORD:-}
-      INSTANCE_URL_SCHEME: ${INSTANCE_URL_SCHEME:-}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.hermes-instances.rule=HostRegexp(`^[a-z0-9-]+\\.${BASE_DOMAIN}`)"
-      - "traefik.http.routers.hermes-instances.entrypoints=${TRAEFIK_ENTRYPOINTS:-web}"
-      - "traefik.http.routers.hermes-instances.service=hermes-instances"
-      - "traefik.http.services.hermes-instances.loadbalancer.server.port=3000"
-    networks:
-      - hermes-net
-      - dokploy-network
+      APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD in .env}
+      # Optional stable session secret across rebuilds:
+      APP_SESSION_SECRET: ${APP_SESSION_SECRET:-}
+      NODE_ENV: production
+    volumes:
+      - ./workspace:/workspace
+      - config:/config
 
-networks:
-  hermes-net:
-    name: hermes-net
-  dokploy-network:
-    external: true
+volumes:
+  config:

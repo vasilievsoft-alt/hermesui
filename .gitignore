@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+workspace/
+data/
+*.db
+*.db-journal
+.DS_Store
+
+# local runtime state (contains agent env/secrets) - never commit
+server/config/
