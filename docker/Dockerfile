@@ -52,4 +52,4 @@ COPY shared ../shared
 COPY --from=web-build /build/dist ../web/dist
 
 EXPOSE 3000
-ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/entrypoint.sh"]
