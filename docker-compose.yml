@@ -6,8 +6,11 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    ports:
-      - '${UI_PORT:-3000}:3000'
+    # No host port mapping: Dokploy's Traefik reaches the container on its
+    # internal port 3000 via the compose network. Direct IP access isn't
+    # needed (and host :3000 is typically occupied by Dokploy itself).
+    expose:
+      - '3000'
     environment:
       APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD in .env}
       # Optional stable session secret across rebuilds:
