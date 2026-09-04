@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { chatApi, subscribeChat } from '../chat-ws';
 import { api } from '../api';
 import { filesApi } from '../files-api';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import type {
   AgentStatus,
   ChatEvent,
@@ -35,8 +36,10 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<PendingAttach[]>([]);
+  const [convsOpen, setConvsOpen] = useState(false);
   const attachInput = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     api.get<AgentStatus[]>('/api/agents').then(setAgents).catch(() => {});
@@ -201,48 +204,83 @@ export default function ChatPage() {
   }
 
   const installed = agents.filter((a) => a.installed);
+  const activeConv = convs.find((c) => c.id === activeId) ?? null;
+
+  function pickConv(id: string) {
+    setConvsOpen(false);
+    void openConv(id);
+  }
 
   return (
     <div className="flex h-full">
-      {/* conversations */}
-      <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40">
-        <div className="border-b border-neutral-800 p-2">
-          <select
-            value=""
-            onChange={(e) => e.target.value && void newConversation(e.target.value)}
-            disabled={creating}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-sm"
-          >
-            <option value="">+ New chat…</option>
-            {(installed.length ? installed : agents).map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-                {!a.installed ? ' (not installed)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1 overflow-auto p-1">
-          {convs.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => void openConv(c.id)}
-              className={`mb-0.5 block w-full rounded-md px-3 py-2 text-left text-sm ${
-                c.id === activeId
-                  ? 'bg-neutral-800 text-white'
-                  : 'text-neutral-400 hover:bg-neutral-800/50'
-              }`}
-            >
-              <span className="block truncate">{c.title || '(untitled)'}</span>
-              <span className="text-xs text-neutral-600">{c.agent}</span>
-            </button>
-          ))}
-        </div>
+      {/* conversations — desktop */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/40 md:flex">
+        <ConversationsPanel
+          agents={agents}
+          installed={installed}
+          convs={convs}
+          activeId={activeId}
+          creating={creating}
+          onNew={(id) => void newConversation(id)}
+          onPick={pickConv}
+        />
       </aside>
+
+      {/* conversations — mobile drawer */}
+      {convsOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setConvsOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-neutral-800 bg-neutral-900 pb-[env(safe-area-inset-bottom)] pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+            <ConversationsPanel
+              agents={agents}
+              installed={installed}
+              convs={convs}
+              activeId={activeId}
+              creating={creating}
+              onNew={(id) => {
+                setConvsOpen(false);
+                void newConversation(id);
+              }}
+              onPick={pickConv}
+            />
+          </div>
+        </div>
+      )}
 
       {/* messages */}
       <section className="flex min-w-0 flex-1 flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-auto p-4">
+        {/* chat header — mobile */}
+        <div className="flex items-center gap-2 border-b border-neutral-800 px-2 py-2 md:hidden">
+          <button
+            onClick={() => setConvsOpen(true)}
+            aria-label="Open conversations"
+            className="-ml-1 rounded-md p-2 text-neutral-300 hover:bg-neutral-800"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-sm text-neutral-200">
+              {activeConv?.title || (activeId ? '(untitled)' : 'Chats')}
+            </span>
+            {activeConv && (
+              <span className="block truncate text-xs text-neutral-600">
+                {activeConv.agent}
+              </span>
+            )}
+          </div>
+          {busy && (
+            <span className="shrink-0 animate-pulse text-xs text-neutral-500">
+              working…
+            </span>
+          )}
+        </div>
+
+        <div ref={scrollRef} className="overscroll-contain flex-1 overflow-auto p-3 md:p-4">
           {!activeId && (
             <div className="grid h-full place-items-center text-sm text-neutral-600">
               create a chat with one of the agents
@@ -261,7 +299,7 @@ export default function ChatPage() {
         </div>
 
         {activeId && (
-          <div className="border-t border-neutral-800 p-3">
+          <div className="border-t border-neutral-800 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
             {pending.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
                 {pending.map((a) => (
@@ -286,7 +324,7 @@ export default function ChatPage() {
               <button
                 onClick={() => attachInput.current?.click()}
                 title="attach images / files"
-                className="rounded-lg border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-800"
+                className="rounded-lg border border-neutral-700 px-3.5 py-2.5 text-sm hover:bg-neutral-800"
               >
                 📎
               </button>
@@ -304,7 +342,8 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  // On touch devices Enter inserts a newline; send via button.
+                  if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
                     e.preventDefault();
                     void send();
                   }
@@ -327,7 +366,7 @@ export default function ChatPage() {
               {busy ? (
                 <button
                   onClick={() => activeId && void chatApi.stop(activeId)}
-                  className="rounded-lg bg-red-800 px-4 py-2 text-sm hover:bg-red-700"
+                  className="rounded-lg bg-red-800 px-4 py-2.5 text-sm hover:bg-red-700"
                 >
                   ■ Stop
                 </button>
@@ -335,7 +374,7 @@ export default function ChatPage() {
                 <button
                   onClick={() => void send()}
                   disabled={!input.trim() && !pending.length}
-                  className="rounded-lg bg-neutral-200 px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
+                  className="rounded-lg bg-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-900 hover:bg-white disabled:opacity-40"
                 >
                   Send
                 </button>
@@ -348,12 +387,67 @@ export default function ChatPage() {
   );
 }
 
+function ConversationsPanel({
+  agents,
+  installed,
+  convs,
+  activeId,
+  creating,
+  onNew,
+  onPick,
+}: {
+  agents: AgentStatus[];
+  installed: AgentStatus[];
+  convs: ConversationInfo[];
+  activeId: string | null;
+  creating: boolean;
+  onNew: (agentId: string) => void;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <>
+      <div className="border-b border-neutral-800 p-2">
+        <select
+          value=""
+          onChange={(e) => e.target.value && onNew(e.target.value)}
+          disabled={creating}
+          className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-2 text-sm"
+        >
+          <option value="">+ New chat…</option>
+          {(installed.length ? installed : agents).map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.label}
+              {!a.installed ? ' (not installed)' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex-1 overflow-auto overscroll-contain p-1">
+        {convs.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onPick(c.id)}
+            className={`mb-0.5 block w-full rounded-md px-3 py-2.5 text-left text-sm md:py-2 ${
+              c.id === activeId
+                ? 'bg-neutral-800 text-white'
+                : 'text-neutral-400 hover:bg-neutral-800/50'
+            }`}
+          >
+            <span className="block truncate">{c.title || '(untitled)'}</span>
+            <span className="text-xs text-neutral-600">{c.agent}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function Bubble({ msg }: { msg: MessageInfo }) {
   const meta = safeParse(msg.meta);
   return (
     <div className={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : ''}`}>
       <div
-        className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
+        className={`max-w-[88%] rounded-xl px-4 py-3 text-sm md:max-w-[80%] ${
           msg.role === 'user'
             ? 'bg-neutral-800 text-neutral-100'
             : 'bg-neutral-900/70 ring-1 ring-neutral-800'
@@ -402,7 +496,7 @@ function AssistantBlock({
 }) {
   return (
     <div className="mb-4 flex">
-      <div className="max-w-[80%] rounded-xl bg-neutral-900/70 px-4 py-3 text-sm ring-1 ring-neutral-800">
+      <div className="max-w-[88%] rounded-xl bg-neutral-900/70 px-4 py-3 text-sm ring-1 ring-neutral-800 md:max-w-[80%]">
         {thoughts && (
           <div className="mb-2 whitespace-pre-wrap text-xs italic text-neutral-500">
             {thoughts.slice(-400)}

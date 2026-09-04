@@ -29,7 +29,7 @@ export default function AgentsPage() {
   }, []);
 
   return (
-    <div className="p-8">
+    <div className="h-full overflow-auto p-4 md:p-8">
       <h1 className="text-lg font-semibold">Agents</h1>
       <p className="mt-1 text-sm text-neutral-500">
         API keys and env vars apply to new agent processes. Use the terminal for
@@ -44,7 +44,7 @@ export default function AgentsPage() {
               key={s.id}
               className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-4"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <span className="text-base font-medium">{s.label}</span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs ${
@@ -133,15 +133,15 @@ function EnvEditor({
   const isSecret = (k: string) => /key|token|secret|password/i.test(k);
 
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-black/60 p-6">
-      <div className="w-full max-w-xl rounded-xl border border-neutral-700 bg-neutral-900 p-5">
+    <div className="fixed inset-0 z-40 grid place-items-center bg-black/60 p-4 md:p-6">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900 pb-[env(safe-area-inset-bottom)] pt-5 pl-5 pr-5">
         <div className="mb-3 flex items-center justify-between">
           <span className="font-medium">Environment · {agentId}</span>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white">
+          <button onClick={onClose} className="p-1 text-neutral-400 hover:text-white">
             ✕
           </button>
         </div>
-        <div className="max-h-80 space-y-2 overflow-auto pr-1">
+        <div className="max-h-80 space-y-2 overflow-auto overscroll-contain pr-1">
           {rows.map((r, i) => (
             <div key={i} className="flex gap-2">
               <input
@@ -149,23 +149,23 @@ function EnvEditor({
                 onChange={(e) => update(i, 'k', e.target.value)}
                 placeholder="VAR_NAME"
                 spellCheck={false}
-                className="w-56 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500"
+                className="w-[40%] shrink-0 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500 md:w-56 md:text-xs"
               />
               <input
                 type={r.k && isSecret(r.k) ? 'password' : 'text'}
                 value={r.v}
                 onChange={(e) => update(i, 'v', e.target.value)}
                 placeholder="value"
-                className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500"
+                className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 font-mono text-xs outline-none focus:border-neutral-500 md:text-xs"
               />
             </div>
           ))}
         </div>
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-4 flex items-center justify-end gap-2 pb-1">
           {saved && <span className="text-sm text-emerald-400">saved</span>}
           <button
             onClick={() => void save()}
-            className="rounded-md bg-emerald-700 px-4 py-2 text-sm hover:bg-emerald-600"
+            className="rounded-md bg-emerald-700 px-4 py-2.5 text-sm hover:bg-emerald-600 md:py-2"
           >
             Save & restart connection
           </button>

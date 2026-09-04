@@ -22,7 +22,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <div className="h-screen grid place-items-center">
+    <div className="grid h-dvh place-items-center p-4">
       <form
         onSubmit={submit}
         className="w-full max-w-xs space-y-4 rounded-xl border border-neutral-800 bg-neutral-900/60 p-6"

@@ -81,30 +81,36 @@ export default function AgentTerminal({ agentId, onClose }: Props) {
   }, [agentId]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-6">
-      <div className="flex h-full max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-700 bg-black">
-        <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 text-sm text-neutral-400">
-          <span>
+    <div className="fixed inset-0 z-50 bg-black/60 p-0 sm:p-6">
+      <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-black sm:h-auto sm:max-h-[85vh] sm:max-w-4xl sm:rounded-xl sm:border sm:border-neutral-700">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-neutral-800 px-3 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] text-sm text-neutral-400 sm:px-4 sm:pt-2">
+          <span className="hidden md:inline">
             agent terminal{agentId ? ` · ${agentId}` : ''} — workspace shell for
             OAuth / setup flows
           </span>
-          <div className="flex items-center gap-2">
+          <span className="md:hidden">
+            terminal{agentId ? ` · ${agentId}` : ''}
+          </span>
+          <div className="ml-auto flex max-w-full items-center gap-1.5 overflow-x-auto sm:gap-2">
             {LAUNCHERS.map((l) => (
               <button
                 key={l.cmd}
                 onClick={() => launch(l.cmd)}
-                className="rounded border border-neutral-700 px-2 py-0.5 text-xs hover:bg-neutral-800 hover:text-white"
+                className="shrink-0 rounded border border-neutral-700 px-2 py-1 text-xs hover:bg-neutral-800 hover:text-white"
                 title={`run ${l.cmd} in this terminal`}
               >
                 ▸ {l.label}
               </button>
             ))}
-            <button onClick={onClose} className="ml-2 hover:text-white">
+            <button
+              onClick={onClose}
+              className="ml-1 shrink-0 rounded px-2 py-1 hover:bg-neutral-800 hover:text-white"
+            >
               ✕ close
             </button>
           </div>
         </div>
-        <div ref={host} className="min-h-0 flex-1 p-2" />
+        <div ref={host} className="min-h-0 flex-1 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]" />
       </div>
     </div>
   );

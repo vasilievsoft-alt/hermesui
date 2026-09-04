@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import CodeEditor from '../components/files/CodeEditor';
 import { filesApi } from '../files-api';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import type { FileEntry } from '../../../shared/types';
 
 interface TNode {
@@ -39,6 +40,7 @@ export default function FilesPage() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   async function loadDir(dir: string): Promise<void> {
     const kids = await fetchChildren(dir);
@@ -126,6 +128,16 @@ export default function FilesPage() {
     <div className="flex h-full flex-col">
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 px-3 py-2 text-sm">
+        {isMobile && selected && (
+          <ToolbarBtn
+            onClick={() => {
+              setSelected(null);
+              setRead(null);
+            }}
+          >
+            ← back
+          </ToolbarBtn>
+        )}
         <ToolbarBtn onClick={() => void loadDir('')}>↻</ToolbarBtn>
         <ToolbarBtn
           onClick={() => {
@@ -146,7 +158,12 @@ export default function FilesPage() {
         >
           + Folder
         </ToolbarBtn>
-        <ToolbarBtn onClick={() => fileInput.current?.click()}>⬆ Upload → {uploadDirFor(selected) || 'root'}</ToolbarBtn>
+        <ToolbarBtn
+          onClick={() => fileInput.current?.click()}
+          title={`Upload to ${uploadDirFor(selected) || 'root'}`}
+        >
+          ⬆<span className="hidden sm:inline"> Upload → {uploadDirFor(selected) || 'root'}</span>
+        </ToolbarBtn>
         <input
           ref={fileInput}
           type="file"
@@ -185,9 +202,10 @@ export default function FilesPage() {
             {!editing && canEdit && <ToolbarBtn onClick={() => setEditing(true)}>✎ Edit</ToolbarBtn>}
             <a
               href={filesApi.downloadUrl(selected)}
-              className="rounded-md border border-neutral-700 px-2 py-1 hover:bg-neutral-800"
+              className="rounded-md border border-neutral-700 px-2.5 py-1.5 hover:bg-neutral-800 md:py-1"
+              title="Download"
             >
-              ⬇ Download
+              ⬇<span className="hidden sm:inline"> Download</span>
             </a>
             <ToolbarBtn
               onClick={() => {
@@ -199,8 +217,9 @@ export default function FilesPage() {
                   });
                 }
               }}
+              title="Delete"
             >
-              🗑 Delete
+              🗑<span className="hidden sm:inline"> Delete</span>
             </ToolbarBtn>
           </>
         )}
@@ -209,22 +228,29 @@ export default function FilesPage() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* tree */}
-        <div className="w-72 shrink-0 overflow-auto border-r border-neutral-800 py-1">
-          <TreeBranch
-            node={root}
-            depth={0}
-            expanded={expanded}
-            selected={selected}
-            onToggle={(n) => void toggleDir(n)}
-            onSelect={(n) =>
-              n.type === 'file' ? void openFile(n.id) : void toggleDir(n)
-            }
-          />
-        </div>
+        {/* tree — full width on mobile until a file is opened */}
+        {(!isMobile || !selected) && (
+          <div
+            className={`${
+              isMobile ? 'w-full' : 'w-72'
+            } shrink-0 overflow-auto overscroll-contain border-r border-neutral-800 py-1`}
+          >
+            <TreeBranch
+              node={root}
+              depth={0}
+              expanded={expanded}
+              selected={selected}
+              onToggle={(n) => void toggleDir(n)}
+              onSelect={(n) =>
+                n.type === 'file' ? void openFile(n.id) : void toggleDir(n)
+              }
+            />
+          </div>
+        )}
 
         {/* viewer */}
-        <div className="min-w-0 flex-1 bg-neutral-950">
+        {(!isMobile || selected) && (
+          <div className="min-w-0 flex-1 bg-neutral-950">
           {!selected && (
             <div className="grid h-full place-items-center text-sm text-neutral-600">
               select a file to preview
@@ -261,7 +287,8 @@ export default function FilesPage() {
               onSave={() => void save()}
             />
           )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -320,15 +347,18 @@ function TreeBranch({
 
 function ToolbarBtn({
   onClick,
+  title,
   children,
 }: {
   onClick: () => void;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-md border border-neutral-700 px-2 py-1 hover:bg-neutral-800"
+      title={title}
+      className="rounded-md border border-neutral-700 px-2.5 py-1.5 hover:bg-neutral-800 md:py-1"
     >
       {children}
     </button>
